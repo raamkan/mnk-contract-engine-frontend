@@ -1,0 +1,12 @@
+# Node
+node_modules/
+dist/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.DS_Store
