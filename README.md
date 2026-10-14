@@ -7,7 +7,7 @@ React and TypeScript application for the MNK challenge. Reviewers can create an 
 1. Set up PostgreSQL and Django using the [service README](../mnk-contract-engine-service/README.md).
 2. Install and start this frontend using the steps below.
 3. Complete the manual review sequence and validation scenarios.
-4. Run the build, lint and backend automated checks.
+4. Run the frontend tests, API integration tests, build, lint and backend automated checks.
 
 No login, seed script or sample database is required. Start with an empty database and create the example contract through the browser. If reviewing separate checkouts, open the service README in that checkout; the relative link assumes the two folders are siblings.
 
@@ -21,6 +21,7 @@ No login, seed script or sample database is required. Start with an empty databa
 | Browser | A modern browser with date-input support |
 | Runtime packages | React 19, React DOM 19, React Router DOM 7 |
 | Development packages | TypeScript 6, Vite 8, React Vite plugin, ESLint and TypeScript/React lint plugins |
+| Test packages | Vitest, V8 coverage, jsdom, React Testing Library, jest-dom and user-event |
 
 `package.json` declares dependencies; `package-lock.json` fixes the installed versions. Use `npm ci` for a reproducible install.
 
@@ -194,11 +195,59 @@ For exact JSON assertions, inspect browser Network responses or use the service'
 Run from the frontend directory:
 
 ```bash
+npm test
+npm run test:coverage
 npm run lint
 npm run build
 ```
 
-Expected: both exit successfully. The build first runs TypeScript project checks (`tsc -b`) and then produces static assets in `dist/`. There is currently no frontend unit-test or browser-test runner and no `npm test` script; the scenarios above are the manual browser checks.
+Expected: all commands exit successfully. The build first runs TypeScript project checks (`tsc -b`) and then produces static assets in `dist/`. The automated suites below cover the documented scenarios. Keep the browser review above for visual appearance, native browser behavior and the Vite proxy.
+
+### Automated frontend tests
+
+`npm test` runs **96 tests across five suites** with Vitest and jsdom. These tests do not require Django or a database. API responses are mocked for component and hook tests; transport tests mock `fetch` to verify real client serialization and error handling.
+
+```bash
+npm test
+npm run test:watch
+npm run test:coverage
+```
+
+Coverage reports appear in `coverage/index.html` and `coverage/coverage-summary.json`. The coverage command enforces minimums of 95% statements, lines and functions, and 90% branches across the configured application files. Coverage percentages measure executed code, rather than proving every possible input is covered.
+
+| Suite | Scenarios covered |
+| --- | --- |
+| `src/test/forms.test.tsx` | Required original-slip fields and focus; negative/overprecision amounts; percentage bounds; currency and date validation; exact decimal-string normalization; duplicate reference and backend errors; creation navigation; cancellation; all five endorsement types in Draft and Agreed status; missing change fields and dates; invalid numbers and premiums; backend rejection display for duplicate numbers, blank reasons, outside-cover dates, invalid extensions, excessive returns, cancellation conflicts and backdated refund changes; pending-submit controls |
+| `src/test/api.test.ts` | URL encoding, pagination and position query parameters; GET/POST paths; headers and abort signals; decimal-string payloads; nested/indexed Django errors; HTTP, network, malformed JSON and empty responses; health success and failure |
+| `src/test/hooks.test.tsx` | Array/paginated/empty lists; loading and retries; missing contracts; aborted requests and stale responses; initial-position reuse; selected-date fetching; out-of-order requests; position errors and retry; refresh after saving |
+| `src/test/views.test.tsx` | Every position checkpoint in the browser review, including original terms, effective-date boundaries, excluded drafts, insured details, extension, returns, cancellation figures, zero balance, before inception and after expiry; original/amended comparison; changes-only filter; sorted history; all application labels; backdating and exact display formatting |
+| `src/test/app.test.tsx` | Root redirect; empty/loading/error list states; recovery; creation/detail navigation; pagination and empty later pages; missing contracts/routes; detail and position retries; date selection; Draft/Agreed save and history refresh; remount/reload presentation; keyboard tabs and cancel-focus restoration |
+
+The position fixtures verify that the frontend faithfully displays backend results. They do not calculate refunds or determine endorsement eligibility. The real API suite below checks those rules against Django. The jsdom workflow tests are component integration tests, not a real browser test suite.
+
+### Real API integration tests
+
+`tests/integration/contracts.test.ts` contains **16 tests** making actual HTTP requests. Start PostgreSQL and Django using the setup above, then run from this frontend directory:
+
+```bash
+npm run test:integration
+```
+
+The default API base is `http://127.0.0.1:8000/api`. To use another local instance:
+
+```bash
+TEST_API_BASE_URL=http://127.0.0.1:8000/api npm run test:integration
+```
+
+This suite creates unique `AUTO-...` contracts and endorsements in the selected database and leaves them available for inspection. Use a disposable review database. It does not edit or delete existing contracts. An unavailable API fails the suite with a startup hint.
+
+The tests exercise the complete original-slip → sum-insured change → excluded draft → insured-name change → extension → premium return → cancellation sequence. Assertions check the exact numeric values and applied numbers at every documented date boundary, the calculated `-79545.45` cancellation refund, immutable original terms, recorded-date retention and persisted history on a subsequent GET.
+
+Additional tests cover missing original fields, duplicate references, duplicate endorsement numbers including saved drafts, missing change values, blank reasons, dates outside cover, invalid extensions, excessive returns, exact zero balance, agreed and draft changes after cancellation, conflicting cancellation, backdated refund changes, positions before inception and after normal expiry, missing contracts and invalid position dates. Rejected endorsements must leave stored history and the original slip unchanged.
+
+Original-slip negative amounts, percentage bounds and reversed dates are currently checked by the frontend form suite; the backend contract serializer does not enforce those bounds. The API tests do not claim server-side protection for those inputs. Decimal precision in the original-slip form is also tested in the frontend.
+
+During implementation, all 96 frontend tests and all 16 real HTTP tests passed. The real HTTP suite was verified against a temporary Django instance with a disposable **SQLite** database; rerun it against the documented **PostgreSQL** setup to verify that deployment. Lint and the production build also passed. Browser rendering, Vite proxy wiring and PostgreSQL-specific behavior remain separate verification steps.
 
 For a local build preview with working API requests, run:
 
