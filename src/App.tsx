@@ -1,24 +1,21 @@
-import { useEffect, useState } from "react";
-import { getHealth, type HealthResponse } from "./health";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AppLayout } from "./contracts/layout/AppLayout";
+import { ContractDetailsPage } from "./contracts/pages/ContractDetailsPage";
+import ContractsPage from "./contracts/pages/ContractsPage";
+import NotFoundPage from "./contracts/pages/NotFoundPage";
 
 export default function App() {
-  const [data, setData] = useState<HealthResponse | null>(null);
-  const [error, setError] = useState<string>("");
-
-  useEffect(() => {
-    getHealth()
-      .then((json) => setData(json))
-      .catch((e: Error) => setError(e.message));
-  }, []);
-
   return (
-    <main style={{ padding: 24, fontFamily: "sans-serif" }}>
-      <h1>MNK Contract Engine Frontend</h1>
-
-      {error && <p style={{ color: "red" }}>Error: {error}</p>}
-      {!error && !data && <p>Loading...</p>}
-
-      {data && <pre>{JSON.stringify(data, null, 2)}</pre>}
-    </main>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<Navigate to="/contracts" replace />} />
+        <Route path="contracts" element={<ContractsPage />} />
+        <Route
+          path="contracts/:mgaReference"
+          element={<ContractDetailsPage />}
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
   );
 }
