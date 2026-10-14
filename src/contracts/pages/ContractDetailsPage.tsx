@@ -1,94 +1,340 @@
-import { useEffect, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, getErrorMessage } from "../../api/client";
-import { getContract } from "../../api/contracts";
-import type { ContractDetails } from "../../types/contract";
-import { formatAmount, formatDate } from "../../utils/format";
-import StatusBadge from "../components/StatusBadge";
 
-type State =
-  | { status: "loading" }
-  | { status: "success"; data: ContractDetails }
-  | { status: "error"; message: string };
+import { createEndorsement } from "../../api/contracts";
+import { useContract } from "../../hooks/useContract";
+import { useContractPosition } from "../../hooks/useContractPosition";
+import { formatDate } from "../../utils/format";
+import ContractPositionPanel from "../components/ContractPositionPanel";
+import EndorsementForm from "../components/EndorsementForm";
+import EndorsementsTable from "../components/EndorsementsTable";
 
-export function ContractDetailsPage() {
-  const { mgaReference = "" } = useParams<{ mgaReference: string }>();
-  const [state, setState] = useState<State>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
+type ContractTab = "position" | "endorsements";
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      setState({ status: "loading" });
-      try {
-        const data = await getContract(mgaReference, controller.signal);
-        if (!controller.signal.aborted) setState({ status: "success", data });
-      } catch (error: unknown) {
-        if (!controller.signal.aborted) {
-          setState({ status: "error", message: error instanceof ApiError && error.status === 404
-            ? "This contract could not be found." : getErrorMessage(error) });
-        }
-      }
+// Enable only when Django supports the known_at query parameter.
+const SUPPORTS_KNOWN_AT = false;
+
+const TAB_ORDER: ContractTab[] = ["position", "endorsements"];
+
+interface ContractDetailsContentProps {
+  mgaReference: string;
+}
+
+function ContractDetailsContent({ mgaReference }: ContractDetailsContentProps) {
+  const { state, reload } = useContract(mgaReference);
+  const positionView = useContractPosition(
+    mgaReference,
+    state.status === "success" ? state.data.current_position : null,
+  );
+
+  const [showForm, setShowForm] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<ContractTab>("position");
+
+  const tabRefs = useRef<
+    Partial<Record<ContractTab, HTMLButtonElement | null>>
+  >({});
+
+  function handleTabKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentTab: ContractTab,
+  ) {
+    const currentIndex = TAB_ORDER.indexOf(currentTab);
+
+    let nextTab: ContractTab;
+
+    switch (event.key) {
+      case "ArrowRight":
+        nextTab = TAB_ORDER[(currentIndex + 1) % TAB_ORDER.length];
+        break;
+
+      case "ArrowLeft":
+        nextTab =
+          TAB_ORDER[(currentIndex - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+        break;
+
+      case "Home":
+        nextTab = "position";
+        break;
+
+      case "End":
+        nextTab = "endorsements";
+        break;
+
+      default:
+        return;
     }
-    void load();
-    return () => controller.abort();
-  }, [mgaReference, attempt]);
 
-  const data = state.status === "success" ? state.data : null;
-  const position = data?.current_position;
-  return (
-    <>
-      <Link className="back-link" to="/contracts">← All contracts</Link>
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">{mgaReference}</p>
-          <h1>Contract details</h1>
-          <p className="page-description">Review the original slip and its endorsements.</p>
+    event.preventDefault();
+
+    setActiveTab(nextTab);
+    tabRefs.current[nextTab]?.focus();
+  }
+
+  if (state.status === "loading") {
+    return (
+      <div className="panel">
+        <div className="empty-state" role="status">
+          <span className="loading-spinner" aria-hidden="true" />
+          <p>Loading contract…</p>
         </div>
       </div>
-      <section className="panel" aria-labelledby="position-heading" aria-busy={state.status === "loading"}>
-        <div className="panel-header">
-          <h2 id="position-heading">Current position</h2>
-          {position && <StatusBadge status={position.status} />}
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <section className="panel">
+        <div className="empty-state">
+          <div role="alert">
+            <h3>
+              {state.notFound
+                ? "Contract not found"
+                : "We couldn’t load this contract"}
+            </h3>
+
+            <p>{state.message}</p>
+          </div>
+
+          {!state.notFound && (
+            <button className="button-primary" type="button" onClick={reload}>
+              Try again
+            </button>
+          )}
         </div>
-        {state.status === "loading" && <div className="empty-state" role="status"><span className="loading-spinner" aria-hidden="true" /><p>Loading contract…</p></div>}
-        {state.status === "error" && <div className="empty-state"><div role="alert"><h3>We couldn’t load this contract</h3><p>{state.message}</p></div><button className="button-primary" onClick={() => setAttempt(current => current + 1)}>Try again</button></div>}
-        {position && <dl className="details-grid">
-          <div><dt>Insured name</dt><dd>{position.insured_name}</dd></div>
-          <div><dt>As at</dt><dd>{formatDate(position.as_at)}</dd></div>
-          <div><dt>Cover period</dt><dd>{formatDate(position.inception_date)} to {formatDate(position.expiry_date)}</dd></div>
-          <div><dt>Sum insured ({position.currency})</dt><dd>{formatAmount(position.sum_insured)}</dd></div>
-          <div><dt>Gross premium ({position.currency})</dt><dd>{formatAmount(position.gross_premium)}</dd></div>
-          <div><dt>Net premium ({position.currency})</dt><dd>{formatAmount(position.net_premium)}</dd></div>
-          <div><dt>Our net premium ({position.currency})</dt><dd>{formatAmount(position.our_net_premium)}</dd></div>
-          {position.cancellation_effective_date && <div><dt>Cancellation effective date</dt><dd>{formatDate(position.cancellation_effective_date)}</dd></div>}
-        </dl>}
       </section>
-      {data && <>
-        <section className="panel detail-panel" aria-labelledby="slip-heading">
-          <div className="panel-header"><h2 id="slip-heading">Original slip</h2></div>
-          <dl className="details-grid">
-            <div><dt>Insured name</dt><dd>{data.slip.insured_name}</dd></div>
-            <div><dt>Class of business</dt><dd>{data.slip.class_of_business}</dd></div>
-            <div><dt>Cover period</dt><dd>{formatDate(data.slip.inception_date)} to {formatDate(data.slip.expiry_date)}</dd></div>
-            <div><dt>Sum insured ({data.slip.currency})</dt><dd>{formatAmount(data.slip.sum_insured)}</dd></div>
-            <div><dt>Gross premium ({data.slip.currency})</dt><dd>{formatAmount(data.slip.gross_premium)}</dd></div>
-            <div><dt>Brokerage</dt><dd>{data.slip.brokerage_pct}%</dd></div>
-            <div><dt>Signed line</dt><dd>{data.slip.signed_line_pct}%</dd></div>
-          </dl>
-        </section>
-        <section className="panel detail-panel" aria-labelledby="endorsements-heading">
-          <div className="panel-header"><h2 id="endorsements-heading">Endorsements</h2><span className="badge">{data.endorsements.length}</span></div>
-          {data.endorsements.length === 0 ? <div className="empty-state"><p>No endorsements recorded.</p></div> :
-            <div className="table-container"><table className="data-table">
-              <caption className="sr-only">Contract endorsements</caption>
-              <thead><tr>{["Number", "Type", "Status", "Effective", "Recorded", "Premium change", "Changes", "Reason"].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-              <tbody>{data.endorsements.map(item => <tr key={item.endorsement_number}>
-                <td>{item.endorsement_number}</td><td>{item.type.replaceAll("_", " ")}</td><td>{item.status}</td><td>{formatDate(item.effective_date)}</td><td>{formatDate(item.recorded_date)}</td><td className="amount-cell">{formatAmount(item.premium_change)} {data.slip.currency}</td><td>{Object.entries(item.changes).map(([field, value]) => `${field.replaceAll("_", " ")}: ${value}`).join("; ") || "—"}</td><td>{item.reason}</td>
-              </tr>)}</tbody>
-            </table></div>}
-        </section>
-      </>}
+    );
+  }
+
+  const { slip, endorsements, current_position: currentPosition } = state.data;
+
+  const suggestedNumber =
+    endorsements.reduce(
+      (highest, endorsement) =>
+        Math.max(highest, endorsement.endorsement_number),
+      0,
+    ) + 1;
+
+  const tabLabels: Record<ContractTab, string> = {
+    position: "Position",
+    endorsements: `Endorsements (${endorsements.length})`,
+  };
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">{slip.mga_reference}</p>
+
+          <h1>{currentPosition.insured_name}</h1>
+
+          <p className="page-description">
+            {slip.class_of_business} · {currentPosition.currency}
+          </p>
+        </div>
+        {!showForm && (
+          <button
+            id="add-endorsement-button"
+            type="button"
+            className="button-primary"
+            onClick={() => {
+              setSuccessMessage(null);
+              setShowForm(true);
+            }}
+          >
+            + Add endorsement
+          </button>
+        )}
+      </div>
+
+      {successMessage && (
+        <div className="success-notice" role="status">
+          {successMessage}
+        </div>
+      )}
+
+      {showForm && (
+        <EndorsementForm
+          suggestedNumber={suggestedNumber}
+          currency={currentPosition.currency}
+          onCancel={() => {
+            setShowForm(false);
+
+            requestAnimationFrame(() => {
+              document.getElementById("add-endorsement-button")?.focus();
+            });
+          }}
+          onSubmit={async (input) => {
+            await createEndorsement(mgaReference, input);
+
+            setShowForm(false);
+
+            setSuccessMessage(
+              input.status === "DRAFT"
+                ? `Draft endorsement #${input.endorsement_number} saved. It does not affect the contract position.`
+                : `Agreed endorsement #${input.endorsement_number} added.`,
+            );
+
+            reload();
+          }}
+        />
+      )}
+
+      <div
+        className="contract-tabs"
+        role="tablist"
+        aria-label="Contract information"
+      >
+        {TAB_ORDER.map((tab) => (
+          <button
+            key={tab}
+            ref={(element) => {
+              tabRefs.current[tab] = element;
+            }}
+            id={`contract-tab-${tab}`}
+            className="contract-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`contract-panel-${tab}`}
+            tabIndex={activeTab === tab ? 0 : -1}
+            onClick={() => setActiveTab(tab)}
+            onKeyDown={(event) => handleTabKeyDown(event, tab)}
+          >
+            {tabLabels[tab]}
+          </button>
+        ))}
+      </div>
+
+      <div className="position-filters">
+        <label className="date-filter">
+          <span>Effective as at</span>
+
+          <input
+            type="date"
+            required
+            value={positionView.asAt}
+            onChange={(event) => {
+              const value = event.target.value;
+
+              if (value && event.target.validity.valid) {
+                positionView.setAsAt(value);
+              }
+            }}
+          />
+
+          <span className="secondary-text">When changes take effect</span>
+        </label>
+
+        {SUPPORTS_KNOWN_AT && (
+          <label className="date-filter">
+            <span>As known at · Optional</span>
+
+            <input
+              type="date"
+              value={positionView.knownAt}
+              onChange={(event) => {
+                if (event.target.validity.valid) {
+                  positionView.setKnownAt(event.target.value);
+                }
+              }}
+            />
+
+            <span className="secondary-text">
+              Only changes recorded by this date
+            </span>
+          </label>
+        )}
+
+        <p className="filter-explanation">
+          Position on {formatDate(positionView.asAt)}
+          {positionView.knownAt
+            ? `, using records entered by ${formatDate(positionView.knownAt)}.`
+            : ", using all currently recorded changes."}
+        </p>
+      </div>
+
+      <div
+        id="contract-panel-position"
+        role="tabpanel"
+        aria-labelledby="contract-tab-position"
+        hidden={activeTab !== "position"}
+        tabIndex={0}
+        aria-busy={positionView.loading}
+      >
+        {positionView.position && (
+          <ContractPositionPanel slip={slip} position={positionView.position} />
+        )}
+      </div>
+
+      <div
+        id="contract-panel-endorsements"
+        role="tabpanel"
+        aria-labelledby="contract-tab-endorsements"
+        hidden={activeTab !== "endorsements"}
+        tabIndex={0}
+        aria-busy={positionView.loading}
+      >
+        {positionView.position && (
+          <EndorsementsTable
+            endorsements={endorsements}
+            position={positionView.position}
+          />
+        )}
+      </div>
+
+      {positionView.loading && (
+        <div className="panel">
+          <div className="empty-state" role="status">
+            <span className="loading-spinner" aria-hidden="true" />
+            <p>Loading the selected position…</p>
+          </div>
+        </div>
+      )}
+
+      {positionView.error && (
+        <div className="panel">
+          <div className="empty-state">
+            <div role="alert">
+              <h3>We couldn’t load this position</h3>
+              <p>{positionView.error}</p>
+            </div>
+
+            <button
+              type="button"
+              className="button-primary"
+              onClick={positionView.retry}
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function ContractDetailsPage() {
+  const { mgaReference } = useParams<{
+    mgaReference: string;
+  }>();
+
+  return (
+    <>
+      <Link className="back-link" to="/contracts">
+        ← All contracts
+      </Link>
+
+      {mgaReference ? (
+        <ContractDetailsContent
+          key={mgaReference}
+          mgaReference={mgaReference}
+        />
+      ) : (
+        <p role="alert">A contract reference is required.</p>
+      )}
     </>
   );
 }

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import StatusBadge from "../components/StatusBadge";
 import { useContracts } from "../../hooks/useContracts";
 import { formatAmount, formatDate } from "../../utils/format";
+import StatusBadge from "../components/StatusBadge";
 
 export default function ContractsPage() {
   const [page, setPage] = useState(1);
@@ -19,8 +19,8 @@ export default function ContractsPage() {
           <h1>Contracts</h1>
 
           <p className="page-description">
-            Review original slips and open a contract to view its current position,
-            terms and endorsements.
+            Review original slips and open a contract to view its current
+            position, terms and endorsements.
           </p>
         </div>
       </div>
@@ -30,15 +30,21 @@ export default function ContractsPage() {
         aria-labelledby="contracts-heading"
         aria-busy={state.status === "loading"}
       >
-        <div className="panel-header">
-          <h2 id="contracts-heading">Your contracts</h2>
+        <div className="page-header">
+          <div>
+            <p className="eyebrow">Portfolio</p>
 
-          {state.status === "success" && (
-            <span className="badge">
-              {state.data.total}{" "}
-              {state.data.total === 1 ? "contract" : "contracts"}
-            </span>
-          )}
+            <h1>Contracts</h1>
+
+            <p className="page-description">
+              Review current positions and open a contract to view its original
+              terms and endorsements.
+            </p>
+          </div>
+
+          <Link to="/contracts/new" className="button-primary">
+            + New contract
+          </Link>
         </div>
 
         {state.status === "loading" && (
@@ -87,9 +93,7 @@ export default function ContractsPage() {
           <>
             <div className="table-container">
               <table className="data-table contracts-table">
-                <caption className="sr-only">
-                  Original contract slips
-                </caption>
+                <caption className="sr-only">Original contract slips</caption>
 
                 <thead>
                   <tr>
