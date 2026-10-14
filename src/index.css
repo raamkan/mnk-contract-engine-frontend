@@ -965,6 +965,11 @@ button:disabled {
   flex-shrink: 0;
 }
 
+.panel > .page-header {
+  padding: 22px 24px;
+  margin-bottom: 0;
+}
+
 .endorsement-form-panel {
   margin-bottom: 28px;
 }

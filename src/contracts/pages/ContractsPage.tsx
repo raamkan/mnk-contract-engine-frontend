@@ -12,17 +12,15 @@ export default function ContractsPage() {
 
   return (
     <>
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">Portfolio</p>
+      <div className="panel-header">
+        <h2 id="contracts-heading">Your contracts</h2>
 
-          <h1>Contracts</h1>
-
-          <p className="page-description">
-            Review original slips and open a contract to view its current
-            position, terms and endorsements.
-          </p>
-        </div>
+        {state.status === "success" && (
+          <span className="badge">
+            {state.data.total}{" "}
+            {state.data.total === 1 ? "contract" : "contracts"}
+          </span>
+        )}
       </div>
 
       <section
@@ -31,17 +29,6 @@ export default function ContractsPage() {
         aria-busy={state.status === "loading"}
       >
         <div className="page-header">
-          <div>
-            <p className="eyebrow">Portfolio</p>
-
-            <h1>Contracts</h1>
-
-            <p className="page-description">
-              Review current positions and open a contract to view its original
-              terms and endorsements.
-            </p>
-          </div>
-
           <Link to="/contracts/new" className="button-primary">
             + New contract
           </Link>

@@ -9,7 +9,7 @@ export function AppLayout() {
       <AppHeader />
       <div className="app-body">
         <AppSidebar />
-        <main id="main-content" className="main-content" tabIndex={-1}>
+        <main id="main-content" className="main-content">
           <Outlet />
         </main>
       </div>
